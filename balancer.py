@@ -1,17 +1,16 @@
 import itertools
 import threading
 import time
-import requests
-from requests.exceptions import RequestException
-from requests.adapters import HTTPAdapter, Retry
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import logging
 import yaml
-
+import tornado.ioloop
+import tornado.web
+import tornado.httpclient
 import logging_config
 
 logger = logging.getLogger(__name__)
 
+# Configuration Class
 class Config:
     def __init__(self, config_file):
         self.config_data = self.load_config(config_file)
@@ -23,44 +22,33 @@ class Config:
     def get(self, key, default=None):
         return self.config_data.get(key, default)
 
-class ReverseProxy(BaseHTTPRequestHandler):
-    def do_GET(self):
-        #url = self.server_manager.get_next_server()
+# Reverse Proxy Handler (replaces BaseHTTPRequestHandler)
+class ReverseProxy(tornado.web.RequestHandler):
+    async def get(self):
+        #url = self.application.server_manager.get_next_server() # You can implement this
         url = "http://localhost:2000"
-        response = self.attempt_request(url)
+        response = await self.attempt_request(url)
 
         if response:
-            self.send_response(response.status_code)
-            self.send_header('Content-type', response.headers.get('Content-Type', 'text/plain'))
-            self.end_headers()
-            self.wfile.write(response.content)
+            self.set_status(response.code)
+            for header, value in response.headers.get_all():
+                self.set_header(header, value)
+            self.write(response.body)
         else:
             self.send_error(502, 'Bad Gateway')
 
-    def attempt_request(self, url):
+    async def attempt_request(self, url):
         logger.info(f"Forwarding request to: {url}")
 
-        with self.create_session() as session:
-            try:
-                response = session.get(url + self.path, headers=dict(self.headers))
-                response.raise_for_status()
-                return response
-            except requests.RequestException as e:
-                logger.error(f"Request failed: {e}")
-                return None
+        http_client = tornado.httpclient.AsyncHTTPClient()
+        try:
+            response = await http_client.fetch(url + self.request.uri, headers=self.request.headers)
+            return response
+        except tornado.httpclient.HTTPClientError as e:
+            logger.error(f"Request failed: {e}")
+            return None
 
-    def create_session(self):
-        session = requests.Session()
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=1,
-            status_forcelist=[502, 503, 504]
-        )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        session.mount('http://', adapter)
-        session.mount('https://', adapter)
-        return session
-
+# Worker Class
 class Worker:
     def __init__(self, id):
         self.id = id
@@ -75,6 +63,7 @@ class Worker:
         self.active = False
         # Add logic to stop the worker
 
+# Health Check Class
 class HealthCheck:
     def __init__(self, config):
         self.enabled = config.get('health_check', {}).get('enabled', False)
@@ -85,6 +74,7 @@ class HealthCheck:
             print("Performing health check")
             # Implement health-check logic
 
+# Router Class
 class Router:
     def __init__(self, config):
         self.strategy = config.get('routing', {}).get('strategy', 'round_robin')
@@ -92,3 +82,16 @@ class Router:
     def route_request(self, request):
         print(f"Routing request using {self.strategy} strategy")
         # Implement routing logic
+
+# Main application setup
+def make_app():
+    return tornado.web.Application([
+        (r"/.*", ReverseProxy),  # Proxying all paths
+    ])
+
+if __name__ == "__main__":
+    config = Config('config.yaml')  # Load your YAML config file
+    app = make_app()
+    app.listen(8080)
+    print("Server running on http://0.0.0.0:8080")
+    tornado.ioloop.IOLoop.current().start()
