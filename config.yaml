@@ -1,0 +1,6 @@
+worker_processes: 4
+health_check:
+  enabled: true
+  interval: 10
+routing:
+  strategy: round_robin

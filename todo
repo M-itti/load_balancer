@@ -1,0 +1,26 @@
+ 
+concurrency: Implementing a load balancer involves handling multiple requests concurrently. This can be an excellent way to practice using goroutines and channels in Go.
+mock nodes 
+
+routing algorithms: round-robin, least connections, or IP hashing.
+
+logging and monitoring
+
+                                          backend1
+                                      /
+client -> ( frontend (loadbalancer) ) 
+                                      \ 
+                                         backend2
+
+1. select servers with algorithm
+
+
+2. option to:
+- bind port of loadbalancer for specific protocols 
+80, 443
+
+- select balancer algorithm
+- add caching
+- consider protocol support https, tcp, other high level protocols
+# TODO: if health is not working remove server on runtime (read more about nginx)
+- graceful shutdown on a keyboard error or signal
