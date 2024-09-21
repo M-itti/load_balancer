@@ -24,3 +24,21 @@ client -> ( frontend (loadbalancer) )
 - consider protocol support https, tcp, other high level protocols
 # TODO: if health is not working remove server on runtime (read more about nginx)
 - graceful shutdown on a keyboard error or signal
+
+
+
+
+
+
+client sends request to ReverseProxy class, triggers def get()
+def get() calls Router() class to find out which backend server to send to, the class Router call also contains the information of request.
+the Router 
+
+
+
+
+
+
+
+
+

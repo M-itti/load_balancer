@@ -5,15 +5,24 @@ from balancer import *
 
 class LoadBalancer:
     def __init__(self, config_file):
+        
+        # TODO: pool is hard-coded
+        self.server_pool = {server: True for server in [
+            "http://localhost:2000",
+            "http://localhost:3000",
+            "http://localhost:4000"
+            ]}
+
         self.config = Config(config_file)
         self.workers = []
-        self.router = Router(self.config)
-        self.health_check = HealthCheck(self.config)
+        self.router = Router(self.config, self.server_pool)
+        self.health_check = HealthCheck(self.config, self.server_pool)
         self.setup_workers()
         
         print(f'Starting proxy server on port 8080...')
         self.app = tornado.web.Application([
-            (r"/.*", ReverseProxy),  # Route all requests to ReverseProxy
+            (r"/.*", ReverseProxy,
+             dict(server_pool=self.server_pool, router=self.router)),  
         ])
         self.app.listen(8080)
 
@@ -31,12 +40,7 @@ class LoadBalancer:
         
         tornado.ioloop.IOLoop.current().start()
 
-    def route_request(self, request):
-        self.router.route_request(request)
-
 if __name__ == "__main__":
     lb = LoadBalancer('config.yaml')
     lb.start()
     
-    # Simulate a request (you could remove this if not needed)
-    lb.route_request('Request 1')
