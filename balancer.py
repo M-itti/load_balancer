@@ -39,18 +39,26 @@ class ReverseProxy(tornado.web.RequestHandler):
                 self.set_header(header, value)
             self.write(response.body)
         else:
-            self.send_error(502, 'Bad Gateway')
+            self.send_error(502)
 
     async def attempt_request(self, url):
         logger.info(f"Forwarding request to: {url}")
 
-        http_client = tornado.httpclient.AsyncHTTPClient()
+        http_client = tornado.httpclient.AsyncHTTPClient(max_clients=200)
         try:
             response = await http_client.fetch(url + self.request.uri, headers=self.request.headers)
             return response
         except tornado.httpclient.HTTPClientError as e:
             logger.error(f"Request failed: {e}")
             return None
+        # TODO: needs connnection refused handle
+        except Exception as e:
+            logger.error(f"Request failed: {e}")
+            return None
+        finally:
+            # Decrement the connection count for the server
+            if url in self.server_pool:
+                self.server_pool[url]["connections"] -= 1
 
 # Worker Class
 class Worker:
@@ -79,20 +87,16 @@ class HealthCheck:
             logger.info("Performing health check")
             http_client = tornado.httpclient.AsyncHTTPClient()
 
-            for server in self.server_pool:
+            for server in list(self.server_pool.keys()):
                 try:
-                    # TODO: add timeout, apply retry logic
-                    response = await http_client.fetch(server)  
-                    # If we receive a response, mark the server as alive
-                    self.server_pool[server] = True
+                    response = await http_client.fetch(server)
+                    self.server_pool[server]["alive"] = True
                     logger.info(f"{server} is alive")
                 except tornado.httpclient.HTTPClientError as e:
-                    # If the request fails, mark the server as down
-                    self.server_pool[server] = False
+                    self.server_pool[server]["alive"] = False
                     logger.warning(f"{server} is down: {e}")
                 except Exception as e:
-                    # TODO: handle this
-                    self.server_pool[server] = False
+                    self.server_pool[server]["alive"] = False
                     logger.warning(f"{server} is down: {e}")
 
     def start(self):
@@ -123,10 +127,18 @@ class RoundRobin(Strategy):
 
 class LeastConnections(Strategy):
     def route(self, request, server_pool):
-        # Implement logic to find the server with the least connections
-        # This is just a placeholder
-        return min(server_pool, key=lambda s: s.connections)
+        active_servers = {server: data for server, data in server_pool.items() if data["alive"]}
+        
+        if not active_servers:
+            raise Exception("No available servers")
 
+        # Select the server with the least connections
+        server = min(active_servers, key=lambda s: active_servers[s]["connections"])
+        
+        # Increment the connection count for the selected server
+        active_servers[server]["connections"] += 1
+        
+        return server
 
 class Router:
     def __init__(self, config, server_pool):

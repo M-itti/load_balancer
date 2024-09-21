@@ -1,5 +1,6 @@
 from flask import Flask
 import os
+import time
 
 app = Flask(__name__)
 
@@ -12,6 +13,10 @@ def health_check():
 @app.route('/')
 def hello():
     app_name = os.getenv('APP_NAME', 'Flask app')
+    print("starting the work")
+    time.sleep(5)
+    print("finished")
+
     return f'Hello from {app_name}!'
 
 if __name__ == '__main__':

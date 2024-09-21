@@ -3,4 +3,4 @@ health_check:
   enabled: true
   interval: 10
 routing:
-  strategy: round_robin
+  strategy: least_connections

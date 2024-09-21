@@ -7,11 +7,17 @@ class LoadBalancer:
     def __init__(self, config_file):
         
         # TODO: pool is hard-coded
-        self.server_pool = {server: True for server in [
-            "http://localhost:2000",
-            "http://localhost:3000",
-            "http://localhost:4000"
-            ]}
+       # self.server_pool = {server: True for server in [
+       #     "http://localhost:2000",
+       #     "http://localhost:3000",
+       #     "http://localhost:4000"
+       #     ]}
+
+        self.server_pool = {
+            "http://localhost:2000": {"connections": 0, "alive": True},
+            "http://localhost:3000": {"connections": 0, "alive": True},
+            "http://localhost:4000": {"connections": 0, "alive": True},
+        }
 
         self.config = Config(config_file)
         self.workers = []
