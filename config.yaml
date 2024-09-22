@@ -4,7 +4,7 @@ server_pool:
   - http://localhost:4000
 
 worker_processes: 4
-listen_port: 5001
+listen_port: 8080
 
 routing:
   strategy: least_connections

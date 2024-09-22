@@ -1,7 +1,7 @@
 import tornado.ioloop
 import tornado.web
 
-from balancer import Config, Router, HealthCheck, Worker, ReverseProxy
+from balancer import Router, HealthCheck, ReverseProxy
 from logging_config import logger
 from config_parser import Config
 
@@ -13,7 +13,6 @@ class LoadBalancer:
             server_url: {"connections": 0, "alive": True} 
             for server_url in self.config.get('server_pool')
         }
-        self.workers = []
         self.router = Router(self.config, self.server_pool)
         self.health_check = HealthCheck(self.config, self.server_pool)
         
@@ -26,8 +25,6 @@ class LoadBalancer:
         self.app.listen(self.listen_port)
 
     def start(self):
-        for worker in self.workers:
-            worker.start()
         if self.health_check.enabled:
             tornado.ioloop.PeriodicCallback(self.health_check.perform_check, self.health_check.interval * 1000).start()
         
