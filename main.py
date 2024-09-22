@@ -3,10 +3,12 @@ import tornado.web
 
 from balancer import Config, Router, HealthCheck, Worker, ReverseProxy
 from logging_config import logger
+from config_parser import Config
 
 class LoadBalancer:
     def __init__(self, config_file):
         self.config = Config(config_file)
+        self.listen_port = self.config.get('listen_port', 8080)  
         self.server_pool = {
             server_url: {"connections": 0, "alive": True} 
             for server_url in self.config.get('server_pool')
@@ -16,12 +18,13 @@ class LoadBalancer:
         self.health_check = HealthCheck(self.config, self.server_pool)
         self.setup_workers()
         
-        logger.info(f'Starting proxy server on port 8080...')
+        logger.info(f'Starting proxy server on port {self.listen_port}...')
         self.app = tornado.web.Application([
             (r"/.*", ReverseProxy,
              dict(server_pool=self.server_pool, router=self.router)),  
         ])
-        self.app.listen(8080)
+
+        self.app.listen(self.listen_port)
 
     def setup_workers(self):
         worker_count = self.config.get('worker_processes', 4)

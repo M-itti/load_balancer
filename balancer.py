@@ -8,17 +8,7 @@ import tornado.httpclient
 
 import logging_config
 from logging_config import logger
-
-class Config:
-    def __init__(self, config_file):
-        self.config_data = self.load_config(config_file)
-
-    def load_config(self, config_file):
-        with open(config_file, 'r') as file:
-            return yaml.safe_load(file)
-
-    def get(self, key, default=None):
-        return self.config_data.get(key, default)
+from config_parser import Config
 
 class ReverseProxy(tornado.web.RequestHandler):
     def initialize(self, server_pool, router):
@@ -77,6 +67,7 @@ class HealthCheck:
         self.server_pool = server_pool
         self.enabled = config.get('health_check', {}).get('enabled', False)
         self.interval = config.get('health_check', {}).get('interval', 10)
+        self.timeout = config.get('health_check', {}).get('timeout', 5)  
 
     async def perform_check(self):
         if self.enabled:
@@ -85,7 +76,7 @@ class HealthCheck:
 
             for server in list(self.server_pool.keys()):
                 try:
-                    response = await http_client.fetch(server)
+                    response = await http_client.fetch(server, request_timeout=self.timeout)
                     self.server_pool[server]["alive"] = True
                     logger.info(f"{server} is alive")
                 except tornado.httpclient.HTTPClientError as e:
