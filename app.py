@@ -10,14 +10,22 @@ def health_check():
     # such as database connectivity, external service status, etc.
     return '', 200  
 
-@app.route('/')
-def hello():
-    app_name = os.getenv('APP_NAME', 'Flask app')
+@app.route('/long_task')
+def long_running():
+    app_name = os.getenv('APP_NAME', 'app')
     print("starting the work")
     time.sleep(5)
     print("finished")
 
-    return f'Hello from {app_name}!'
+    return f'{app_name}! \n'
+
+@app.route('/')
+def hello():
+    app_name = os.getenv('APP_NAME', 'app')
+    print("starting the work")
+    print("finished")
+
+    return f'{app_name}! \n'
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))

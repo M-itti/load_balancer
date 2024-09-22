@@ -1,31 +1,22 @@
-import logging
 import tornado.ioloop
 import tornado.web
-from balancer import *
+
+from balancer import Config, Router, HealthCheck, Worker, ReverseProxy
+from logging_config import logger
 
 class LoadBalancer:
     def __init__(self, config_file):
-        
-        # TODO: pool is hard-coded
-       # self.server_pool = {server: True for server in [
-       #     "http://localhost:2000",
-       #     "http://localhost:3000",
-       #     "http://localhost:4000"
-       #     ]}
-
-        self.server_pool = {
-            "http://localhost:2000": {"connections": 0, "alive": True},
-            "http://localhost:3000": {"connections": 0, "alive": True},
-            "http://localhost:4000": {"connections": 0, "alive": True},
-        }
-
         self.config = Config(config_file)
+        self.server_pool = {
+            server_url: {"connections": 0, "alive": True} 
+            for server_url in self.config.get('server_pool')
+        }
         self.workers = []
         self.router = Router(self.config, self.server_pool)
         self.health_check = HealthCheck(self.config, self.server_pool)
         self.setup_workers()
         
-        print(f'Starting proxy server on port 8080...')
+        logger.info(f'Starting proxy server on port 8080...')
         self.app = tornado.web.Application([
             (r"/.*", ReverseProxy,
              dict(server_pool=self.server_pool, router=self.router)),  

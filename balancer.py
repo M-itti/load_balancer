@@ -1,16 +1,14 @@
 import itertools
 import threading
 import time
-import logging
 import yaml
 import tornado.ioloop
 import tornado.web
 import tornado.httpclient
+
 import logging_config
+from logging_config import logger
 
-logger = logging.getLogger(__name__)
-
-# Configuration Class
 class Config:
     def __init__(self, config_file):
         self.config_data = self.load_config(config_file)
@@ -26,7 +24,7 @@ class ReverseProxy(tornado.web.RequestHandler):
     def initialize(self, server_pool, router):
         self.server_pool = server_pool
         self.router = router
-        print(self.server_pool)
+        logger.debug(self.server_pool)
 
     async def get(self):
         # choosing the backend server to route
@@ -60,22 +58,20 @@ class ReverseProxy(tornado.web.RequestHandler):
             if url in self.server_pool:
                 self.server_pool[url]["connections"] -= 1
 
-# Worker Class
 class Worker:
     def __init__(self, id):
         self.id = id
         self.active = True
 
     def start(self):
-        print(f"Starting worker {self.id}")
+        logger.info(f"Starting worker {self.id}")
         # Add logic to start the worker
 
     def stop(self):
-        print(f"Stopping worker {self.id}")
+        logger.info(f"Stopping worker {self.id}")
         self.active = False
         # Add logic to stop the worker
 
-# Health Check Class
 class HealthCheck:
     def __init__(self, config, server_pool):
         self.server_pool = server_pool
@@ -146,7 +142,7 @@ class Router:
         routing_config = config.get('routing', {})
         # if strategy key is emtpy, round_robin is assigned to strategy_name
         strategy_name = routing_config.get('strategy', 'round_robin')
-        print("Selected strategy", strategy_name)
+        logger.info(f"Selected strategy: {strategy_name}")
 
         # Select the appropriate strategy based on the config
         self.strategy = self.select_strategy(strategy_name)
@@ -161,5 +157,5 @@ class Router:
 
     def route_request(self, request):
         server = self.strategy.route(request, self.server_pool)
-        print(f"Routing request to {server} using {self.strategy.__class__.__name__} strategy")
+        logger.info(f"Routing request to {server} using {self.strategy.__class__.__name__} strategy")
         return server
