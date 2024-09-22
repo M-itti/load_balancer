@@ -8,7 +8,6 @@ import tornado.httpclient
 
 import logging_config
 from logging_config import logger
-from config_parser import Config
 
 class ReverseProxy(tornado.web.RequestHandler):
     def initialize(self, server_pool, router):
@@ -47,20 +46,6 @@ class ReverseProxy(tornado.web.RequestHandler):
             # Decrement the connection count for the server
             if url in self.server_pool:
                 self.server_pool[url]["connections"] -= 1
-
-class Worker:
-    def __init__(self, id):
-        self.id = id
-        self.active = True
-
-    def start(self):
-        logger.info(f"Starting worker {self.id}")
-        # Add logic to start the worker
-
-    def stop(self):
-        logger.info(f"Stopping worker {self.id}")
-        self.active = False
-        # Add logic to stop the worker
 
 class HealthCheck:
     def __init__(self, config, server_pool):
