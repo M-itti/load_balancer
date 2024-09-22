@@ -16,4 +16,4 @@ health_check:
 
 logging:
   level: "INFO"
-  file: "./tmp/balancer.log"
+  file: "/tmp/balancer.log"

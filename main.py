@@ -16,7 +16,6 @@ class LoadBalancer:
         self.workers = []
         self.router = Router(self.config, self.server_pool)
         self.health_check = HealthCheck(self.config, self.server_pool)
-        self.setup_workers()
         
         logger.info(f'Starting proxy server on port {self.listen_port}...')
         self.app = tornado.web.Application([
@@ -25,12 +24,6 @@ class LoadBalancer:
         ])
 
         self.app.listen(self.listen_port)
-
-    def setup_workers(self):
-        worker_count = self.config.get('worker_processes', 4)
-        for i in range(worker_count):
-            worker = Worker(i)
-            self.workers.append(worker)
 
     def start(self):
         for worker in self.workers:
