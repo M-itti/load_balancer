@@ -11,7 +11,7 @@ routing:
 
 health_check:
   enabled: true
-  interval: 15
+  interval: 2
   timeout: 4
 
 logging:

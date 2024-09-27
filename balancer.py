@@ -5,9 +5,14 @@ import yaml
 import tornado.ioloop
 import tornado.web
 import tornado.httpclient
+import requests
+from abc import ABC, abstractmethod
+from multiprocessing import Value, Lock
 
 import logging_config
 from logging_config import logger
+
+# TODO: add docstring for methods
 
 class ReverseProxy(tornado.web.RequestHandler):
     def initialize(self, server_pool, router):
@@ -30,7 +35,8 @@ class ReverseProxy(tornado.web.RequestHandler):
 
     async def attempt_request(self, url):
         logger.info(f"Forwarding request to: {url}")
-
+        
+        # TODO: hard coded
         http_client = tornado.httpclient.AsyncHTTPClient(max_clients=200)
         try:
             response = await http_client.fetch(url + self.request.uri, headers=self.request.headers)
@@ -38,7 +44,6 @@ class ReverseProxy(tornado.web.RequestHandler):
         except tornado.httpclient.HTTPClientError as e:
             logger.error(f"Request failed: {e}")
             return None
-        # TODO: needs connnection refused handle
         except Exception as e:
             logger.error(f"Request failed: {e}")
             return None
@@ -52,36 +57,41 @@ class HealthCheck:
         self.server_pool = server_pool
         self.enabled = config.get('health_check', {}).get('enabled', False)
         self.interval = config.get('health_check', {}).get('interval', 10)
-        self.timeout = config.get('health_check', {}).get('timeout', 5)  
+        self.timeout = config.get('health_check', {}).get('timeout', 5)
 
-    async def perform_check(self):
-        if self.enabled:
-            logger.info("Performing health check")
-            http_client = tornado.httpclient.AsyncHTTPClient()
+    def perform_check(self):
+        if not self.enabled:
+            return
 
-            for server in list(self.server_pool.keys()):
-                try:
-                    response = await http_client.fetch(server, request_timeout=self.timeout)
-                    self.server_pool[server]["alive"] = True
-                    logger.info(f"{server} is alive")
-                except tornado.httpclient.HTTPClientError as e:
-                    self.server_pool[server]["alive"] = False
-                    logger.warning(f"{server} is down: {e}")
-                except Exception as e:
-                    self.server_pool[server]["alive"] = False
-                    logger.warning(f"{server} is down: {e}")
+        logger.info("Performing health check")
 
-    def start(self):
-        if self.enabled:
-            tornado.ioloop.PeriodicCallback(self.perform_check, self.interval).start()
+        while True:  # Keep the health check running in a loop
+            for server in self.server_pool:
+                alive = self.check_server(server)
+                self.server_pool[server]["alive"] = alive
+            time.sleep(self.interval)  # Wait before the next health check
 
-class Strategy:
+    def check_server(self, server):
+        try:
+            response = requests.get(server, timeout=self.timeout)
+            if response.status_code == 200:
+                logger.info(f"{server} is alive")
+                return True
+            else:
+                logger.warning(f"{server} returned status {response.status_code}")
+                return False
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"{server} is down: {e}")
+            return False
+
+class Strategy(ABC):
+    @abstractmethod
     def route(self, request, server_pool):
-        raise NotImplementedError("Subclasses should implement this method.")
+        pass
 
 class RoundRobin(Strategy):
     def __init__(self):
-        self.index = 0
+        self.index = Value('i', 0)  
 
     def route(self, request, server_pool):
         # Convert the keys of the server_pool dict into a list
@@ -92,23 +102,32 @@ class RoundRobin(Strategy):
             raise Exception("No available servers")
 
         # Use the round-robin approach to select the server
-        server = active_servers[self.index % len(active_servers)]
-        self.index += 1
-        
+        with self.index.get_lock():
+            server = active_servers[self.index.value % len(active_servers)]
+            self.index.value += 1
+
         return server
 
 class LeastConnections(Strategy):
-    def route(self, request, server_pool):
-        active_servers = {server: data for server, data in server_pool.items() if data["alive"]}
-        
-        if not active_servers:
-            raise Exception("No available servers")
+    def __init__(self):
+        self.lock = Lock()
 
-        # Select the server with the least connections
-        server = min(active_servers, key=lambda s: active_servers[s]["connections"])
-        
-        # Increment the connection count for the selected server
-        active_servers[server]["connections"] += 1
+    def route(self, request, server_pool):
+        with self.lock:
+            active_servers = {server: data for server, data in server_pool.items() if data["alive"]}
+            #print(active_servers)
+            
+            if not active_servers:
+                raise Exception("No available servers")
+
+            # Select the server with the least connections
+            #server = min(active_servers, key=lambda s: active_servers[s]["connections"])
+            server = min(active_servers, key=lambda s: server_pool[s]["connections"])
+            
+            # Increment the connection count for the selected server
+            #active_servers[server]["connections"] += 1
+            server_pool[server]["connections"] += 1
+            print(server_pool)
         
         return server
 
@@ -116,11 +135,12 @@ class Router:
     def __init__(self, config, server_pool):
         self.server_pool = server_pool
         routing_config = config.get('routing', {})
+
         # if strategy key is emtpy, round_robin is assigned to strategy_name
         strategy_name = routing_config.get('strategy', 'round_robin')
         logger.info(f"Selected strategy: {strategy_name}")
 
-        # Select the appropriate strategy based on the config
+        # select the appropriate strategy based on the config
         self.strategy = self.select_strategy(strategy_name)
 
     def select_strategy(self, strategy_name):
