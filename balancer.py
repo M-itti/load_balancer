@@ -34,6 +34,7 @@ class ReverseProxy(tornado.web.RequestHandler):
     async def attempt_request(self, url):
         logger.info(f"Forwarding request to: {url}")
         
+        # TODO: this is hard coded
         http_client = tornado.httpclient.AsyncHTTPClient(max_clients=200)
         try:
             response = await http_client.fetch(url + self.request.uri, headers=self.request.headers)
@@ -71,8 +72,7 @@ class HealthCheck:
 
     def start(self):
         if self.enabled:
-            # TODO: make it a while loop, this is for testing
-            for _ in range(3):
+            while True:
                 self.perform_check()
                 time.sleep(self.interval)
 
@@ -137,26 +137,3 @@ class Router:
         logger.info(f"Routing request to {server} using {self.strategy.__class__.__name__} strategy")
         return server
 
-# Example of initializing the server pool using multiprocessing.Manager()
-if __name__ == "__main__":
-    manager = Manager()
-    
-    # Example configuration
-    config = {
-        'server_pool': ['http://server1', 'http://server2'],
-        'routing': {'strategy': 'round_robin'},
-        'health_check': {'enabled': True, 'interval': 10, 'timeout': 5}
-    }
-    
-    # Initializing server pool
-    server_pool = manager.dict({
-        server_url: manager.dict({"connections": 0, "alive": True})
-        for server_url in config.get('server_pool')
-    })
-
-    # Creating instances
-    router = Router(config, server_pool)
-    health_check = HealthCheck(config, server_pool)
-
-    # Start health checks
-    health_check.start()

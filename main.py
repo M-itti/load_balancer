@@ -13,19 +13,12 @@ from config_parser import Config
 
 # TODO: add graceful shutdown (pkill python, pkill Python)
 
-# TODO: active servers are local to the route!! must be global
-
 class LoadBalancer:
     def __init__(self, config_file):
         self.config = Config(config_file)
         self.listen_port = self.config.get('listen_port', 8080)
         self.default_workers = os.cpu_count()  
         
-        #self.server_pool = {
-        #    server_url: {"connections": 0, "alive": True} 
-        #    for server_url in self.config.get('server_pool')
-        #}
-    
         manager = Manager()
         self.server_pool = manager.dict({
             server_url: manager.dict({"connections": 0, "alive": True})
@@ -41,10 +34,8 @@ class LoadBalancer:
              dict(server_pool=self.server_pool, router=self.router)),
         ])
 
-        # Create the HTTP server instance
         self.http_server = tornado.httpserver.HTTPServer(self.app)
 
-        # Bind the server to the specified port
         self.http_server.bind(self.listen_port)
 
     def start_health_check(self):
