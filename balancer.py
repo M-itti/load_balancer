@@ -7,12 +7,10 @@ import tornado.web
 import tornado.httpclient
 import requests
 from abc import ABC, abstractmethod
-from multiprocessing import Value, Lock
+from multiprocessing import Value, Lock, Manager
 
 import logging_config
 from logging_config import logger
-
-# TODO: add docstring for methods
 
 class ReverseProxy(tornado.web.RequestHandler):
     def initialize(self, server_pool, router):
@@ -21,7 +19,7 @@ class ReverseProxy(tornado.web.RequestHandler):
         logger.debug(self.server_pool)
 
     async def get(self):
-        # choosing the backend server to route
+        # Choosing the backend server to route
         url = self.router.route_request(self.request.uri)  
         response = await self.attempt_request(url)
 
@@ -36,7 +34,6 @@ class ReverseProxy(tornado.web.RequestHandler):
     async def attempt_request(self, url):
         logger.info(f"Forwarding request to: {url}")
         
-        # TODO: hard coded
         http_client = tornado.httpclient.AsyncHTTPClient(max_clients=200)
         try:
             response = await http_client.fetch(url + self.request.uri, headers=self.request.headers)
@@ -60,29 +57,24 @@ class HealthCheck:
         self.timeout = config.get('health_check', {}).get('timeout', 5)
 
     def perform_check(self):
-        if not self.enabled:
-            return
+        if self.enabled:
+            logger.info("Performing health check")
+            for server in list(self.server_pool.keys()):
+                try:
+                    response = requests.get(server, timeout=self.timeout)
+                    response.raise_for_status()
+                    self.server_pool[server]["alive"] = True
+                    logger.info(f"{server} is alive")
+                except requests.RequestException as e:
+                    self.server_pool[server]["alive"] = False
+                    logger.warning(f"{server} is down: {e}")
 
-        logger.info("Performing health check")
-
-        while True:  # Keep the health check running in a loop
-            for server in self.server_pool:
-                alive = self.check_server(server)
-                self.server_pool[server]["alive"] = alive
-            time.sleep(self.interval)  # Wait before the next health check
-
-    def check_server(self, server):
-        try:
-            response = requests.get(server, timeout=self.timeout)
-            if response.status_code == 200:
-                logger.info(f"{server} is alive")
-                return True
-            else:
-                logger.warning(f"{server} returned status {response.status_code}")
-                return False
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"{server} is down: {e}")
-            return False
+    def start(self):
+        if self.enabled:
+            # TODO: make it a while loop, this is for testing
+            for _ in range(3):
+                self.perform_check()
+                time.sleep(self.interval)
 
 class Strategy(ABC):
     @abstractmethod
@@ -91,20 +83,19 @@ class Strategy(ABC):
 
 class RoundRobin(Strategy):
     def __init__(self):
-        self.index = Value('i', 0)  
+        self.index = Value('i', 0)
 
     def route(self, request, server_pool):
-        # Convert the keys of the server_pool dict into a list
-        active_servers = [server for server, is_alive in server_pool.items() if is_alive]
-        
-        # Check if there are any active servers
+        active_servers = [server for server, data in server_pool.items() if data["alive"]]
+
         if not active_servers:
             raise Exception("No available servers")
 
-        # Use the round-robin approach to select the server
         with self.index.get_lock():
+            # Use the index to get the current server
             server = active_servers[self.index.value % len(active_servers)]
-            self.index.value += 1
+            # Update the index for the next call
+            self.index.value = (self.index.value + 1) % len(active_servers)
 
         return server
 
@@ -115,32 +106,22 @@ class LeastConnections(Strategy):
     def route(self, request, server_pool):
         with self.lock:
             active_servers = {server: data for server, data in server_pool.items() if data["alive"]}
-            #print(active_servers)
-            
+
             if not active_servers:
                 raise Exception("No available servers")
 
             # Select the server with the least connections
-            #server = min(active_servers, key=lambda s: active_servers[s]["connections"])
             server = min(active_servers, key=lambda s: server_pool[s]["connections"])
-            
-            # Increment the connection count for the selected server
-            #active_servers[server]["connections"] += 1
-            server_pool[server]["connections"] += 1
-            print(server_pool)
-        
+            server_pool[server]["connections"] += 1  # Increment the connection count
+
         return server
 
 class Router:
     def __init__(self, config, server_pool):
         self.server_pool = server_pool
         routing_config = config.get('routing', {})
-
-        # if strategy key is emtpy, round_robin is assigned to strategy_name
         strategy_name = routing_config.get('strategy', 'round_robin')
         logger.info(f"Selected strategy: {strategy_name}")
-
-        # select the appropriate strategy based on the config
         self.strategy = self.select_strategy(strategy_name)
 
     def select_strategy(self, strategy_name):
@@ -155,3 +136,27 @@ class Router:
         server = self.strategy.route(request, self.server_pool)
         logger.info(f"Routing request to {server} using {self.strategy.__class__.__name__} strategy")
         return server
+
+# Example of initializing the server pool using multiprocessing.Manager()
+if __name__ == "__main__":
+    manager = Manager()
+    
+    # Example configuration
+    config = {
+        'server_pool': ['http://server1', 'http://server2'],
+        'routing': {'strategy': 'round_robin'},
+        'health_check': {'enabled': True, 'interval': 10, 'timeout': 5}
+    }
+    
+    # Initializing server pool
+    server_pool = manager.dict({
+        server_url: manager.dict({"connections": 0, "alive": True})
+        for server_url in config.get('server_pool')
+    })
+
+    # Creating instances
+    router = Router(config, server_pool)
+    health_check = HealthCheck(config, server_pool)
+
+    # Start health checks
+    health_check.start()

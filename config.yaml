@@ -7,7 +7,7 @@ worker_processes: 4
 listen_port: 8080
 
 routing:
-  strategy: least_connections
+  strategy: round_robin
 
 health_check:
   enabled: true
@@ -15,5 +15,5 @@ health_check:
   timeout: 4
 
 logging:
-  level: "INFO"
+  level: "DEBUG"
   file: "/tmp/balancer.log"
